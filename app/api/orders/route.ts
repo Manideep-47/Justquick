@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+﻿import { NextRequest, NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 
@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   try {
-    console.log("🔄 ORDER API: Starting order creation...")
+    console.log("ðŸ”„ ORDER API: Starting order creation...")
     
     const cookieStore = await cookies()
     
@@ -31,20 +31,19 @@ export async function POST(request: NextRequest) {
     // ============================================
     // 1. AUTHENTICATION CHECK
     // ============================================
-    const { data: { session } } = await supabase.auth.getSession()
-    
-    if (!session?.user) {
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+
+    if (authError || !user) {
       return NextResponse.json(
-        { 
+        {
           error: "Authentication required. Please log in.",
           code: "NO_USER"
         },
         { status: 401 }
       )
     }
-    
-    const user = session.user
-    console.log("✅ User authenticated:", { id: user.id, email: user.email })
+
+    console.log("User authenticated:", { id: user.id, email: user.email })
     
     // ============================================
     // 2. PARSE REQUEST BODY
@@ -59,6 +58,8 @@ export async function POST(request: NextRequest) {
       payment_type = "COD", // Default to COD
       shop_lat = 0,
       shop_lng = 0,
+      buyer_lat,
+      buyer_lng,
       buyer_phone,
       buyer_address = ""
     } = body
@@ -80,6 +81,27 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validate buyer delivery coordinates
+    const parsedBuyerLat = Number(buyer_lat)
+    const parsedBuyerLng = Number(buyer_lng)
+
+    if (
+      buyer_lat === undefined ||
+      buyer_lng === undefined ||
+      !Number.isFinite(parsedBuyerLat) ||
+      !Number.isFinite(parsedBuyerLng) ||
+      parsedBuyerLat < -90 ||
+      parsedBuyerLat > 90 ||
+      parsedBuyerLng < -180 ||
+      parsedBuyerLng > 180 ||
+      (parsedBuyerLat === 0 && parsedBuyerLng === 0)
+    ) {
+      return NextResponse.json(
+        { error: "A valid delivery location is required. Please allow location access." },
+        { status: 400 }
+      )
+    }
+
     // ============================================
     // 4. VALIDATE PAYMENT TYPE (CRITICAL FIX)
     // ============================================
@@ -88,7 +110,7 @@ export async function POST(request: NextRequest) {
     const normalizedPaymentType = (payment_type || "").toString().toUpperCase()
     
     if (!validPaymentTypes.includes(normalizedPaymentType)) {
-      console.error("❌ Invalid payment_type:", payment_type)
+      console.error("âŒ Invalid payment_type:", payment_type)
       return NextResponse.json(
         { 
           error: "Invalid payment type",
@@ -109,7 +131,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (shopError || !shop) {
-      console.error("❌ Shop verification failed:", shopError)
+      console.error("âŒ Shop verification failed:", shopError)
       return NextResponse.json(
         { 
           error: "Shop not found",
@@ -134,15 +156,15 @@ export async function POST(request: NextRequest) {
         .single()
 
       if (!profileError && profile) {
-        console.log("✅ Found user profile:", profile)
+        console.log("âœ… Found user profile:", profile)
         if (profile.name) buyerName = profile.name
         if (!buyerPhone && profile.phone) buyerPhone = profile.phone
         if (!buyerAddress && profile.address) buyerAddress = profile.address
       } else if (profileError) {
-        console.log("⚠️ Profile not found, using defaults:", profileError.message)
+        console.log("âš ï¸ Profile not found, using defaults:", profileError.message)
       }
     } catch (profileFetchError) {
-      console.log("⚠️ Error fetching profile:", profileFetchError)
+      console.log("âš ï¸ Error fetching profile:", profileFetchError)
     }
 
     // ============================================
@@ -160,15 +182,15 @@ export async function POST(request: NextRequest) {
       buyer_contact: user.email || buyerPhone || "unknown",
       buyer_phone: buyerPhone || null,
       buyer_address: buyerAddress || null,
-      buyer_lat: 0,
-      buyer_lng: 0,
+      buyer_lat: parsedBuyerLat,
+buyer_lng: parsedBuyerLng,
       products: products,
       total_price: parseFloat(total_price.toString()),
       delivery_cost: parseFloat(delivery_cost.toString()),
       
       // CRITICAL: Must match check constraints
       payment_type: normalizedPaymentType, // 'COD' or 'ONLINE'
-      payment_status: normalizedPaymentType === "COD" ? "unpaid" : "paid", // 'unpaid' or 'paid'
+      payment_status: "unpaid", // Payment is pending until verified
       status: "pending", // Must be one of the allowed statuses
       
       otp: otp,
@@ -188,7 +210,7 @@ export async function POST(request: NextRequest) {
       ],
     }
 
-    console.log("✅ Order data validated against constraints:", {
+    console.log("âœ… Order data validated against constraints:", {
       payment_type: orderData.payment_type,
       payment_status: orderData.payment_status,
       status: orderData.status
@@ -197,7 +219,7 @@ export async function POST(request: NextRequest) {
     // ============================================
     // 9. INSERT ORDER INTO DATABASE
     // ============================================
-    console.log("💾 Attempting to insert order...")
+    console.log("ðŸ’¾ Attempting to insert order...")
     const { data: order, error: orderError } = await supabase
       .from("orders")
       .insert(orderData)
@@ -205,7 +227,7 @@ export async function POST(request: NextRequest) {
       .single()
 
     if (orderError) {
-      console.error("❌ SUPABASE INSERT ERROR:", {
+      console.error("Order insert failed:", {
         message: orderError.message,
         code: orderError.code,
         details: orderError.details,
@@ -239,7 +261,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log("🎉 Order created successfully! ID:", order.id)
+    console.log("ðŸŽ‰ Order created successfully! ID:", order.id)
     
     // ============================================
     // 10. RETURN SUCCESS RESPONSE
@@ -254,7 +276,7 @@ export async function POST(request: NextRequest) {
     )
 
   } catch (error: any) {
-    console.error("💥 UNEXPECTED ERROR in order API:", error)
+    console.error("ðŸ’¥ UNEXPECTED ERROR in order API:", error)
     
     return NextResponse.json(
       { 
@@ -302,58 +324,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const orderId = searchParams.get("id")
     const scope = searchParams.get("scope")
-    const isAdmin = user.user_metadata?.role === "admin"
+    const isAdmin = user.app_metadata?.role === "admin"
 
-    // ===============================
-    // DELIVERY BOY FETCH: their assigned orders
-    // ===============================
-    const deliveryBoyId = searchParams.get("delivery_boy_id")
-    if (deliveryBoyId) {
-      console.log("🛵 Delivery boy fetching orders:", deliveryBoyId, "for user:", user.id)
-      
-      // Must be the delivery boy themselves
-      if (user.id !== deliveryBoyId) {
-        return NextResponse.json(
-          { 
-            error: "Forbidden", 
-            details: "You can only fetch your own orders" 
-          },
-          { status: 403 }
-        )
-      }
-      
-      // Must have delivery role
-      if (user.user_metadata?.role !== "delivery") {
-        return NextResponse.json(
-          { 
-            error: "Forbidden", 
-            details: "Only delivery personnel can fetch their orders" 
-          },
-          { status: 403 }
-        )
-      }
-      
-      // Fetch orders assigned to this delivery boy
-      const { data: orders, error: ordersError } = await supabase
-        .from("orders")
-        .select("*")
-        .eq("delivery_boy_id", deliveryBoyId)
-        .order("created_at", { ascending: false })
-
-      if (ordersError) {
-        console.error("Delivery orders fetch error:", ordersError)
-        return NextResponse.json({ 
-          orders: [],
-          error: ordersError.message 
-        }, { status: 500 })
-      }
-
-      console.log(`✅ Delivery boy found ${orders?.length || 0} orders`)
-      return NextResponse.json({ 
-        orders: orders || [],
-        delivery: true 
-      })
-    }
 
     // ===============================
     // ADMIN FETCH: all orders
@@ -363,7 +335,7 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 })
       }
 
-      console.log("✅ Admin fetching ALL orders...")
+      console.log("âœ… Admin fetching ALL orders...")
       
       // FIX: Admin gets ALL orders, no filters
       const { data: orders, error: ordersError } = await supabase
@@ -379,7 +351,7 @@ export async function GET(request: NextRequest) {
         }, { status: 500 })
       }
 
-      console.log(`✅ Admin found ${orders?.length || 0} orders`)
+      console.log(`âœ… Admin found ${orders?.length || 0} orders`)
       return NextResponse.json({ 
         orders: orders || [],
         admin: true 
@@ -399,10 +371,10 @@ export async function GET(request: NextRequest) {
       
       // FIX: Admin can fetch any order, buyer only their own
       if (!isAdmin) {
-        console.log("👤 Buyer: filtering by buyer_id:", user.id)
+        console.log("ðŸ‘¤ Buyer: filtering by buyer_id:", user.id)
         query = query.eq("buyer_id", user.id)
       } else {
-        console.log("👑 Admin: fetching order without buyer filter")
+        console.log("ðŸ‘‘ Admin: fetching order without buyer filter")
       }
       
       const { data: order, error } = await query.single()
@@ -434,7 +406,7 @@ export async function GET(request: NextRequest) {
       // FIX: Remove buyer ownership check since we already filtered
       // Admin can see all orders, buyers only see their own due to filter above
       
-      console.log("✅ Order fetched successfully:", order.id)
+      console.log("âœ… Order fetched successfully:", order.id)
       return NextResponse.json(
         { order },
         { status: 200 }
@@ -452,10 +424,10 @@ export async function GET(request: NextRequest) {
     
     // FIX: Admin sees all orders, buyer only their own
     if (!isAdmin) {
-      console.log("👤 Buyer: listing only their orders")
+      console.log("ðŸ‘¤ Buyer: listing only their orders")
       query = query.eq("buyer_id", user.id)
     } else {
-      console.log("👑 Admin: listing all orders")
+      console.log("ðŸ‘‘ Admin: listing all orders")
     }
     
     const { data: orders, error } = await query
@@ -466,7 +438,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ orders: [] }, { status: 500 })
     }
 
-    console.log(`✅ Found ${orders?.length || 0} orders`)
+    console.log(`âœ… Found ${orders?.length || 0} orders`)
     return NextResponse.json(
       { orders: orders || [] },
       { status: 200 }

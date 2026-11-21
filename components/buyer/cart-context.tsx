@@ -197,7 +197,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         email: user.email || '',
         phone: profile.phone || user.user_metadata?.phone || '',
         address: profile.address || user.user_metadata?.address || '',
-        role: profile.role
+        role: profile.role ?? undefined
       }
       logger.log("✅ Cart: Buyer synced from auth", {
         id: buyerData.id,
@@ -516,7 +516,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
           email: session.user.email || '',
           phone: profile.phone || session.user.user_metadata?.phone || '',
           address: profile.address || session.user.user_metadata?.address || '',
-          role: profile.role
+          role: profile.role ?? undefined
         }
         logger.log("✅ Cart: User profile refreshed from database")
         setBuyer(refreshedBuyer)
@@ -608,7 +608,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       total,
       buyer,
       isAuthenticated: !!user,
-      isLoading: false, // isHydrated = true means not loading
+      isLoading: authLoading || !isHydrated, // isHydrated = true means not loading
       isAdmin: isAdminUser,
       isBuyer: !isAdminUser,
       add,

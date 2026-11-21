@@ -78,7 +78,7 @@ async function broadcastNotification(notification: any) {
     
     const channel = supabaseAdmin.channel(channelName);
     
-    channel.subscribe((status) => {
+    channel.subscribe((status: string) => {
       if (status === 'SUBSCRIBED') {
         channel.send({
           type: 'broadcast',

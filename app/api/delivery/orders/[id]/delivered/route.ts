@@ -59,7 +59,7 @@ export async function POST(
       .from("orders")
       .select("*")
       .eq("id", id)
-      .eq("delivery_boy_id", session.user.id)
+      .eq("delivery_boy_id", user.id)
       .single()
 
     if (orderError) {
@@ -80,8 +80,8 @@ export async function POST(
     // Add to timeline
     await timelineHelpers.delivered(
       id,
-      session.user.id,
-      session.user.user_metadata?.name || "Delivery Partner",
+      user.id,
+      user.user_metadata?.name || "Delivery Partner",
       true
     )
 
@@ -126,8 +126,8 @@ export async function POST(
         body: JSON.stringify({
           target_type: "admin",
           title: "Order Delivered",
-          message: `Order #${id.slice(0, 8)} has been delivered by ${session.user.user_metadata?.name || "Delivery Partner"}`,
-          metadata: { order_id: id, status: "delivered", delivery_boy_id: session.user.id }
+          message: `Order #${id.slice(0, 8)} has been delivered by ${user.user_metadata?.name || "Delivery Partner"}`,
+          metadata: { order_id: id, status: "delivered", delivery_boy_id: user.id }
         }),
       })
     ])

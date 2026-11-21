@@ -1,15 +1,57 @@
-import { NextResponse, type NextRequest } from "next/server"
-import { getSupabaseServer } from "@/lib/supabase/server"
 
-export const dynamic = 'force-dynamic'
+import { NextRequest, NextResponse } from "next/server"
+import { getSupabaseAdmin } from "@/lib/supabase/server"
+import { verifyDriverSession } from "@/lib/delivery-session"
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
-  const { is_available } = await req.json()
-  const supabase = await getSupabaseServer()
+export const dynamic = "force-dynamic"
 
-  const { data, error } = await supabase.from("delivery_boys").update({ is_available }).eq("id", id).select().single()
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const driverId = verifyDriverSession(req)
+    const { id } = await params
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json({ delivery_boy: data })
+    if (!driverId || driverId !== id) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401 }
+      )
+    }
+
+    const body = await req.json()
+
+    if (typeof body.is_available !== "boolean") {
+      return NextResponse.json(
+        { error: "Invalid availability value" },
+        { status: 400 }
+      )
+    }
+
+    const supabase = getSupabaseAdmin()
+
+    const { data, error } = await supabase
+      .from("delivery_boys")
+      .update({ is_available: body.is_available })
+      .eq("id", driverId)
+      .select("id, name, is_available")
+      .single()
+
+    if (error) {
+      console.error("Availability update failed:", error.message)
+      return NextResponse.json(
+        { error: "Unable to update availability" },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ delivery_boy: data })
+  } catch (error) {
+    console.error("Availability API error:", error)
+    return NextResponse.json(
+      { error: "Unable to update availability" },
+      { status: 500 }
+    )
+  }
 }

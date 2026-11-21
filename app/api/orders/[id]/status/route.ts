@@ -1,8 +1,41 @@
+
 import { NextRequest, NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
+import { createClient } from "@supabase/supabase-js"
 import { cookies } from "next/headers"
+import { createHmac, timingSafeEqual } from "crypto"
 
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic"
+
+const VENDOR_COOKIE = "jq_vendor_session"
+
+function verifyVendorSession(token: string | undefined) {
+  if (!token) return null
+
+  const parts = token.split(".")
+  if (parts.length !== 2) return null
+
+  const [shopId, suppliedSignature] = parts
+
+  const secret = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!secret || !shopId || !suppliedSignature) return null
+
+  const expectedSignature = createHmac("sha256", secret)
+    .update(shopId)
+    .digest("hex")
+
+  const supplied = Buffer.from(suppliedSignature, "hex")
+  const expected = Buffer.from(expectedSignature, "hex")
+
+  if (
+    supplied.length !== expected.length ||
+    !timingSafeEqual(supplied, expected)
+  ) {
+    return null
+  }
+
+  return shopId
+}
 
 export async function PATCH(
   request: NextRequest,
@@ -10,25 +43,28 @@ export async function PATCH(
 ) {
   try {
     const { id } = await params
-    
     const body = await request.json()
-    const { 
-      status, 
-      actor, 
-      actor_name, 
-      actor_id,
-      reason 
-    } = body
 
-    if (!status) {
+    const { status, reason } = body
+
+    if (!id || !status) {
       return NextResponse.json(
-        { error: "Status is required" },
+        { error: "Order ID and status are required" },
+        { status: 400 }
+      )
+    }
+
+    const allowedStatuses = ["accepted", "rejected", "ready"]
+
+    if (!allowedStatuses.includes(status)) {
+      return NextResponse.json(
+        { error: "Invalid status. Allowed: accepted, rejected, ready" },
         { status: 400 }
       )
     }
 
     const cookieStore = await cookies()
-    
+
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -39,147 +75,183 @@ export async function PATCH(
           },
           setAll(cookiesToSet) {
             try {
-              cookiesToSet.forEach(({ name, value, options }) =>
+              cookiesToSet.forEach(({ name, value, options }) => {
                 cookieStore.set(name, value, options)
-              )
-            } catch (error) {
-              console.error("Cookie error:", error)
+              })
+            } catch {
+              // Cookies may not be writable in this context.
             }
           },
         },
       }
     )
 
-    // Check authentication
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
+    // Check whether the requester is an authenticated admin.
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    const isAdmin = user?.app_metadata?.role === "admin"
+
+
+    // Otherwise, check the signed vendor session cookie.
+    const vendorShopId = verifyVendorSession(
+      cookieStore.get(VENDOR_COOKIE)?.value
+    )
+
+    if (!isAdmin && !vendorShopId) {
       return NextResponse.json(
-        { error: "Authentication required" },
+        { error: "Authentication required. Please log in again." },
         { status: 401 }
       )
     }
 
-    // MUST BE ADMIN
-    const userRole = user.user_metadata?.role
-    if (userRole !== "admin") {
+    // Use the service role only on the server, after authorization.
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+
+    if (!serviceKey) {
       return NextResponse.json(
-        { 
-          error: "Forbidden", 
-          details: "Only admin can update order status" 
-        },
-        { status: 403 }
+        { error: "Server configuration error" },
+        { status: 500 }
       )
     }
 
-    // Get current order
-    const { data: order, error: orderError } = await supabase
+    const adminClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      serviceKey,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    )
+
+    // Fetch the order.
+    const { data: order, error: orderError } = await adminClient
       .from("orders")
       .select("*")
       .eq("id", id)
-      .single()
+      .maybeSingle()
 
     if (orderError) {
+      console.error("Order lookup failed:", orderError)
+      return NextResponse.json(
+        { error: "Could not retrieve order" },
+        { status: 500 }
+      )
+    }
+
+    if (!order) {
       return NextResponse.json(
         { error: "Order not found" },
         { status: 404 }
       )
     }
 
-    // 🔴 HARD BLOCK: Admin cannot update delivery statuses
-    if (["picked_up", "delivered"].includes(status)) {
+    // A vendor can only update orders belonging to their own shop.
+    if (!isAdmin && order.shop_id !== vendorShopId) {
       return NextResponse.json(
-        { 
-          error: "Forbidden", 
-          details: "Admin cannot update delivery status. Use separate endpoints for delivery actions." 
-        },
+        { error: "You are not authorized to update this order" },
         { status: 403 }
       )
     }
 
-    // ✅ STRICT ADMIN STATUS FLOW
-    const validAdminTransitions: Record<string, string[]> = {
+    // Only admins or the order's own vendor can use this route.
+    const currentStatus = order.status
+
+    const validTransitions: Record<string, string[]> = {
       pending: ["accepted", "rejected"],
       accepted: ["ready"],
-      ready: [] // Admin cannot change ready status further
+      ready: [],
     }
 
-    // Check if transition is valid
-    const currentStatus = order.status
-    const allowedNextStatuses = validAdminTransitions[currentStatus] || []
+    const allowedNextStatuses = validTransitions[currentStatus] || []
 
     if (!allowedNextStatuses.includes(status)) {
       return NextResponse.json(
-        { 
-          error: "Invalid status transition", 
-          details: `Admin cannot change status from ${currentStatus} to ${status}. Allowed: ${allowedNextStatuses.join(", ") || "none"}`
+        {
+          error: "Invalid status transition",
+          details: `Cannot change order from ${currentStatus} to ${status}`,
         },
         { status: 400 }
       )
     }
 
-    const actorName = actor_name || session.user.user_metadata?.name || "Admin"
-    const actorId = actor_id || session.user.id
+    const actorType = isAdmin ? "admin" : "vendor"
+    const actorId = isAdmin ? user!.id : vendorShopId
 
-    // ✅ PREPARE ATOMIC UPDATE PAYLOAD (Status + Timeline Together)
-    const timelineEntry = {
-      status,
-      action: "",
-      description: "",
-      timestamp: new Date().toISOString(),
-      actor: "admin" as const,
-      actor_id: actorId,
-      actor_name: actorName
-    }
+    const actorName = isAdmin
+      ? user!.user_metadata?.name || "Admin"
+      : "Shop Vendor"
 
-    // Set appropriate timeline details
+    let action = ""
+    let description = ""
+
     switch (status) {
       case "accepted":
-        timelineEntry.action = "Order Accepted"
-        timelineEntry.description = "Shop has accepted the order and started preparing"
+        action = "Order Accepted"
+        description = "Shop has accepted the order and started preparing"
         break
+
       case "rejected":
-        timelineEntry.action = "Order Rejected"
-        timelineEntry.description = reason || "Order has been rejected by the shop"
+        action = "Order Rejected"
+        description = reason || "Shop has rejected the order"
         break
+
       case "ready":
-        timelineEntry.action = "Order Ready"
-        timelineEntry.description = "Order is ready for pickup"
+        action = "Order Ready"
+        description = "Order is ready for pickup"
         break
     }
 
-    // ✅ ATOMIC UPDATE: Status + Timeline in ONE operation
-    const { data: updatedOrder, error: updateError } = await supabase
+    const timelineEntry = {
+      status,
+      action,
+      description,
+      timestamp: new Date().toISOString(),
+      actor: actorType,
+      actor_id: actorId,
+      actor_name: actorName,
+    }
+
+    const existingTimeline = Array.isArray(order.timeline)
+      ? order.timeline
+      : []
+
+    const { data: updatedOrder, error: updateError } = await adminClient
       .from("orders")
-      .update({ 
+      .update({
         status,
-        timeline: [...(order.timeline || []), timelineEntry]
+        timeline: [...existingTimeline, timelineEntry],
       })
       .eq("id", id)
+      .eq("status", currentStatus)
       .select()
       .single()
 
     if (updateError) {
-      console.error("❌ Atomic update failed:", updateError)
+      console.error("Order status update failed:", updateError)
       return NextResponse.json(
-        { error: "Failed to update order", details: updateError.message },
+        { error: "Failed to update order status" },
         { status: 500 }
       )
     }
 
-    console.log(`✅ Admin updated order ${id}: ${order.status} → ${status}`)
-    return NextResponse.json(
-      { 
-        success: true, 
-        order: updatedOrder,
-        message: `Order status updated to ${status}` 
-      },
-      { status: 200 }
+    console.log(
+      `${actorType} updated order ${id}: ${currentStatus} -> ${status}`
     )
 
-  } catch (error: any) {
+    return NextResponse.json({
+      success: true,
+      order: updatedOrder,
+      message: `Order status updated to ${status}`,
+    })
+  } catch (error) {
     console.error("Status update error:", error)
+
     return NextResponse.json(
-      { error: "Server error", details: error.message },
+      { error: "Internal server error" },
       { status: 500 }
     )
   }

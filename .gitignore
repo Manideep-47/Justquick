@@ -77,3 +77,6 @@ temp/
 # Private files
 .private
 secrets/
+
+# TypeScript cache
+*.tsbuildinfo

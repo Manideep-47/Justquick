@@ -1,81 +1,90 @@
-// /app/api/orders/auto-assign/route.ts
-import { NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
 
-export const dynamic = 'force-dynamic'
+import { NextRequest, NextResponse } from "next/server"
+import { getSupabaseServer, getSupabaseAdmin } from "@/lib/supabase/server"
 
-const getSupabase = () => createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+export const dynamic = "force-dynamic"
 
-export async function POST() {
+export async function POST(_request: NextRequest) {
   try {
-    // ✅ Now correctly fetches "accepted" orders
+    const authClient = await getSupabaseServer()
+    const { data: { user }, error: authError } =
+      await authClient.auth.getUser()
+
+    if (authError || user?.app_metadata?.role !== "admin") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
+    }
+
+    const supabase = getSupabaseAdmin()
+
     const { data: orders, error: ordersError } = await supabase
       .from("orders")
-      .select("*")
-      .eq("status", "accepted")
+      .select("id, status, delivery_boy_id, timeline")
+      .in("status", ["accepted", "ready"])
       .is("delivery_boy_id", null)
 
     if (ordersError) {
-      return NextResponse.json({ error: ordersError.message }, { status: 500 })
+      console.error("Auto-assign order fetch failed:", ordersError.message)
+      return NextResponse.json({ error: "Unable to fetch orders" }, { status: 500 })
     }
 
-    if (!orders || orders.length === 0) {
+    if (!orders?.length) {
       return NextResponse.json({ ok: true, assigned: 0 })
     }
 
-    const { data: drivers } = await supabase
+    const { data: drivers, error: driversError } = await supabase
       .from("delivery_boys")
-      .select("*")
+      .select("id")
       .eq("is_available", true)
 
-    if (!drivers || drivers.length === 0) {
+    if (driversError) {
+      console.error("Auto-assign driver fetch failed:", driversError.message)
+      return NextResponse.json({ error: "Unable to fetch drivers" }, { status: 500 })
+    }
+
+    if (!drivers?.length) {
       return NextResponse.json({ ok: true, assigned: 0 })
     }
 
     let assigned = 0
 
-    for (const order of orders) {
-      const driver = drivers[assigned % drivers.length]
+    for (let i = 0; i < orders.length; i++) {
+      const order = orders[i]
+      const driver = drivers[i % drivers.length]
+      const timeline = Array.isArray(order.timeline) ? order.timeline : []
 
-      if (order.delivery_boy_id || order.status !== "accepted") continue
-
-      // ✅ Now updates to "assigned" which is valid
-      const { error: updateError } = await supabase
+      const { data, error } = await supabase
         .from("orders")
         .update({
           delivery_boy_id: driver.id,
-          status: "assigned", // ✅ Valid status
+
           timeline: [
-            ...(order.timeline || []),
+            ...timeline,
             {
-              action: "delivery_assigned",
-              actor: "system",
+              action: "Delivery Assigned",
+              actor: "admin",
+              status: "ready",
               timestamp: new Date().toISOString(),
-              metadata: { driver_id: driver.id }
-            }
-          ]
+              metadata: { driver_id: driver.id },
+            },
+          ],
         })
         .eq("id", order.id)
-        .eq("status", "accepted")
+        .in("status", ["accepted", "ready"])
         .is("delivery_boy_id", null)
+        .select("id")
+        .maybeSingle()
 
-      if (updateError) {
-        console.error("Auto-assign update error:", updateError)
+      if (error) {
+        console.error("Auto-assign update failed:", error.message)
         continue
       }
 
-      assigned++
+      if (data) assigned++
     }
 
     return NextResponse.json({ ok: true, assigned })
-
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e.message },
-      { status: 500 }
-    )
+  } catch (error) {
+    console.error("Auto-assign error:", error)
+    return NextResponse.json({ error: "Server error" }, { status: 500 })
   }
 }

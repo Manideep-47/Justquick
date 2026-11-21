@@ -170,16 +170,14 @@ export function ProductList({ shopId }: { shopId: string }) {
         </div>
       )}
 
-      <AuthModal
-        open={showAuthModal}
-        onOpenChange={(open) => {
-          if (!open) {
-            setShowAuthModal(false)
-            setPendingProduct(null)
-          }
-        }}
-        onSuccess={handleAuthSuccess}
-        title="Login to Add to Cart"
+       <AuthModal
+         isOpen={showAuthModal}
+         onClose={() => {
+           setShowAuthModal(false)
+           setPendingProduct(null)
+         }}
+         onSuccess={handleAuthSuccess}
+         title="Login to Add to Cart"
       />
     </>
   )

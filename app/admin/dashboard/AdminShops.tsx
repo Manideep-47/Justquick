@@ -14,10 +14,10 @@ import { Store, Plus, Trash2, User, Phone, MapPin, X } from "lucide-react"
 const fetcher = (u: string) => fetch(u).then((r) => r.json())
 
 interface AdminShopsProps {
-  initialShops: any[];  // Add this line to define the prop
+  initialShops?: any[];
 }
 
-export default function AdminShops({ initialShops }: AdminShopsProps) {  // Update the function signature to accept the prop
+export default function AdminShops({ initialShops = [] }: AdminShopsProps) { // Update the function signature to accept the prop
   const { data, mutate: mutateShops } = useSWR("/api/shops", fetcher)
   const [name, setName] = useState("")
   const [address, setAddress] = useState("")

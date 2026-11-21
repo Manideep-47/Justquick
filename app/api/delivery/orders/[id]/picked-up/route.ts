@@ -52,7 +52,7 @@ export async function POST(
       .from("orders")
       .select("*")
       .eq("id", id)
-      .eq("delivery_boy_id", session.user.id)
+      .eq("delivery_boy_id", user.id)
       .single()
 
     if (orderError) {
@@ -75,8 +75,8 @@ export async function POST(
     // Add to timeline
     await timelineHelpers.pickedUp(
       id,
-      session.user.id,
-      session.user.user_metadata?.name || "Delivery Partner",
+      user.id,
+      user.user_metadata?.name || "Delivery Partner",
       otpVerified
     )
 

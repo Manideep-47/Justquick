@@ -16,14 +16,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { 
-  User, 
-  ShoppingBag, 
-  Package, 
-  LogOut, 
-  ChevronDown, 
-  Settings, 
-  Store, 
+import {
+  User,
+  ShoppingBag,
+  Package,
+  LogOut,
+  ChevronDown,
+  Settings,
+  Store,
   Truck,
   ShoppingCart,
   BarChart3,
@@ -34,15 +34,15 @@ import {
 export function UserMenu() {
   const router = useRouter()
   const { getItemCount } = useCart()
-  const { 
-    user, 
-    loading, 
-    isAuthenticated, 
-    isAdmin, 
+  const {
+    user,
+    loading,
+    isAuthenticated,
+    isAdmin,
     isBuyer,
-    logout 
+    logout
   } = useAuth()
-  
+
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
@@ -59,6 +59,12 @@ export function UserMenu() {
 
   const cartCount = getItemCount()
 
+  const userName =
+  user?.user_metadata?.full_name ||
+  user?.user_metadata?.name ||
+  user?.email?.split("@")[0] ||
+  "User"
+
   // Only show loading skeleton during initial mount
   // But continue showing content if auth is still loading but user data exists
   if (!mounted) {
@@ -68,7 +74,7 @@ export function UserMenu() {
         <div className="p-2">
           <div className="h-5 w-5 bg-primary/10 rounded animate-pulse" />
         </div>
-        
+
         {/* User button skeleton */}
         <div className="h-9 w-20 bg-primary/10 rounded animate-pulse" />
       </div>
@@ -130,11 +136,11 @@ export function UserMenu() {
             <div className={`h-8 w-8 rounded-full flex items-center justify-center ${
               isAdmin ? "bg-purple-500/20" : "bg-primary/20"
             }`}>
-              {user?.name ? (
+              {userName ? (
                 <span className={`text-sm font-bold ${
                   isAdmin ? "text-purple-600" : "text-primary"
                 }`}>
-                  {user.name.charAt(0).toUpperCase()}
+                  {userName.charAt(0).toUpperCase()}
                 </span>
               ) : (
                 <User className={`h-4 w-4 ${
@@ -149,7 +155,7 @@ export function UserMenu() {
           <div className="px-2 py-2">
             <div className="flex items-start justify-between gap-2">
               <div>
-                <p className="font-medium truncate max-w-[180px]">{user?.name || "User"}</p>
+                <p className="font-medium truncate max-w-[180px]">{userName || "User"}</p>
                 <p className="text-xs text-muted-foreground truncate max-w-[180px]">{user?.email}</p>
               </div>
               {isAdmin && (
@@ -159,9 +165,9 @@ export function UserMenu() {
               )}
             </div>
           </div>
-          
+
           <DropdownMenuSeparator />
-          
+
           {/* Admin menu items */}
           {isAdmin && (
             <>
@@ -171,14 +177,14 @@ export function UserMenu() {
                   Admin Dashboard
                 </Link>
               </DropdownMenuItem>
-              
+
               <DropdownMenuItem asChild>
                 <Link href="/admin/orders" prefetch={false} className="cursor-pointer">
                   <ShoppingCart className="h-4 w-4 mr-2" />
                   Manage Orders
                 </Link>
               </DropdownMenuItem>
-              
+
               <DropdownMenuItem asChild>
                 <Link href="/admin/shops" prefetch={false} className="cursor-pointer">
                   <Store className="h-4 w-4 mr-2" />
@@ -199,11 +205,11 @@ export function UserMenu() {
                   Commissions
                 </Link>
               </DropdownMenuItem>
-              
+
               <DropdownMenuSeparator />
             </>
           )}
-          
+
           {/* Buyer menu items */}
           {isBuyer && (
             <>
@@ -213,18 +219,18 @@ export function UserMenu() {
                   Edit Profile
                 </Link>
               </DropdownMenuItem>
-              
+
               <DropdownMenuItem asChild>
                 <Link href="/my-orders" prefetch={false} className="cursor-pointer">
                   <Package className="h-4 w-4 mr-2" />
                   My Orders
                 </Link>
               </DropdownMenuItem>
-              
+
               <DropdownMenuSeparator />
             </>
           )}
-          
+
           <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-red-600 focus:text-red-600">
             <LogOut className="h-4 w-4 mr-2" />
             Logout

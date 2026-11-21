@@ -16,7 +16,7 @@ export default function Verify() {
 
   useEffect(() => {
     const sub = supabase.auth.onAuthStateChange(async (evt) => {
-      if (evt.event === "SIGNED_IN") {
+      if (evt === "SIGNED_IN") {
         await postLoginUpsert()
       }
     })

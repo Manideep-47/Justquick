@@ -1,3 +1,4 @@
+
 "use client"
 
 import type React from "react"
@@ -27,6 +28,7 @@ export function DriverLoginModal({ isOpen, onClose }: DriverLoginModalProps) {
     setError("")
 
     const trimmed = loginCode.trim()
+
     if (!CODE_RE.test(trimmed)) {
       setError("Please enter a valid 6-digit code")
       return
@@ -35,30 +37,24 @@ export function DriverLoginModal({ isOpen, onClose }: DriverLoginModalProps) {
     setLoading(true)
 
     try {
-      const res = await fetch(`/api/delivery-boys?login_code=${trimmed}`)
-      if (!res.ok) {
-        setError("Invalid code. Please check and try again.")
-        setLoading(false)
+      const res = await fetch("/api/delivery/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ loginCode: trimmed }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok || !data.driver?.id) {
+        setError(data.error || "Invalid code. Please try again.")
         return
       }
 
-      const data = await res.json()
-      const driverId = data.delivery_boy?.id
-
-      // Store driver session with both login_code and driver_id
-      localStorage.setItem(
-        "jq_driver",
-        JSON.stringify({
-          loginCode: trimmed,
-          driverId,
-          driverName: data.delivery_boy?.name,
-          timestamp: Date.now(),
-        }),
-      )
-
-      router.push(`/delivery?driver=${driverId}`)
+      setLoginCode("")
       onClose()
-    } catch (err) {
+      router.push("/delivery")
+    } catch {
       setError("Something went wrong. Please try again.")
     } finally {
       setLoading(false)
@@ -102,13 +98,17 @@ export function DriverLoginModal({ isOpen, onClose }: DriverLoginModalProps) {
                 inputMode="numeric"
                 maxLength={6}
                 value={loginCode}
-                onChange={(e) => setLoginCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                onChange={(e) =>
+                  setLoginCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                }
                 placeholder="Enter 6-digit code"
                 className="pl-10 h-12 rounded-xl font-mono text-2xl text-center tracking-[0.5em]"
                 required
               />
             </div>
-            <p className="text-xs text-muted-foreground">Contact admin to register and get your 6-digit code</p>
+            <p className="text-xs text-muted-foreground">
+              Contact admin to register and get your 6-digit code
+            </p>
           </div>
 
           {error && (

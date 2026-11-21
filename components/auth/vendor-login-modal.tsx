@@ -1,3 +1,4 @@
+
 "use client"
 
 import type React from "react"
@@ -14,7 +15,10 @@ type VendorLoginModalProps = {
 
 const CODE_RE = /^\d{6}$/
 
-export function VendorLoginModal({ isOpen, onClose }: VendorLoginModalProps) {
+export function VendorLoginModal({
+  isOpen,
+  onClose,
+}: VendorLoginModalProps) {
   const [loginCode, setLoginCode] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -27,6 +31,7 @@ export function VendorLoginModal({ isOpen, onClose }: VendorLoginModalProps) {
     setError("")
 
     const trimmed = loginCode.trim()
+
     if (!CODE_RE.test(trimmed)) {
       setError("Please enter a valid 6-digit code")
       return
@@ -35,30 +40,41 @@ export function VendorLoginModal({ isOpen, onClose }: VendorLoginModalProps) {
     setLoading(true)
 
     try {
-      const res = await fetch(`/api/shops?login_code=${trimmed}`)
+      const res = await fetch("/api/vendor/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          loginCode: trimmed,
+        }),
+      })
+
+      const data = await res.json()
+
       if (!res.ok) {
-        setError("Invalid code. Please check and try again.")
-        setLoading(false)
+        setError(data.error || "Invalid shop code. Please try again.")
         return
       }
 
-      const data = await res.json()
-      const shopId = data.shop?.id
+      if (!data.shop?.id || !data.shop?.name) {
+        setError("Invalid response from server. Please try again.")
+        return
+      }
 
-      // Store vendor session with both login_code and shop_id
       localStorage.setItem(
         "jq_vendor",
         JSON.stringify({
-          loginCode: trimmed,
-          shopId,
-          shopName: data.shop?.name,
+          shopId: data.shop.id,
+          shopName: data.shop.name,
           timestamp: Date.now(),
-        }),
+        })
       )
 
-      router.push(`/vendor?shop=${shopId}`)
+      router.push(`/vendor?shop=${data.shop.id}`)
       onClose()
     } catch (err) {
+      console.error("Vendor login error:", err)
       setError("Something went wrong. Please try again.")
     } finally {
       setLoading(false)
@@ -76,39 +92,57 @@ export function VendorLoginModal({ isOpen, onClose }: VendorLoginModalProps) {
       >
         <div className="relative p-6 bg-gradient-to-r from-amber-500 to-orange-500">
           <button
+            type="button"
             onClick={onClose}
             className="absolute top-4 right-4 h-8 w-8 rounded-full bg-white/20 flex items-center justify-center text-white hover:bg-white/30 transition"
           >
             <X className="h-4 w-4" />
           </button>
+
           <div className="flex items-center gap-3">
             <div className="h-12 w-12 rounded-xl bg-white/20 flex items-center justify-center">
               <Store className="h-6 w-6 text-white" />
             </div>
+
             <div>
-              <h2 className="text-xl font-bold text-white">Vendor Login</h2>
-              <p className="text-white/80 text-sm">Access your shop dashboard</p>
+              <h2 className="text-xl font-bold text-white">
+                Vendor Login
+              </h2>
+              <p className="text-white/80 text-sm">
+                Access your shop dashboard
+              </p>
             </div>
           </div>
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">Shop Login Code</label>
+            <label className="text-sm font-medium">
+              Shop Login Code
+            </label>
+
             <div className="relative">
               <Key className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+
               <Input
                 type="text"
                 inputMode="numeric"
                 maxLength={6}
                 value={loginCode}
-                onChange={(e) => setLoginCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                onChange={(e) =>
+                  setLoginCode(
+                    e.target.value.replace(/\D/g, "").slice(0, 6)
+                  )
+                }
                 placeholder="Enter 6-digit code"
                 className="pl-10 h-12 rounded-xl font-mono text-2xl text-center tracking-[0.5em]"
                 required
               />
             </div>
-            <p className="text-xs text-muted-foreground">Contact admin to get your 6-digit shop code</p>
+
+            <p className="text-xs text-muted-foreground">
+              Contact admin to get your 6-digit shop code
+            </p>
           </div>
 
           {error && (

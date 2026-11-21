@@ -1,71 +1,109 @@
+
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { getSupabaseServer, getSupabaseAdmin } from "@/lib/supabase/server"
 
-export const dynamic = 'force-dynamic'
-
-// Lazy init
-const getSupabase = () => createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+export const dynamic = "force-dynamic"
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params
-    const { delivery_boy_id, delivery_name } = await request.json()
+    // Verify admin authentication
+    const authClient = await getSupabaseServer()
+    const { data: { user }, error: authError } = await authClient.auth.getUser()
 
-    if (!delivery_boy_id) {
-      return NextResponse.json({ error: "delivery_boy_id required" }, { status: 400 })
+    if (authError || user?.app_metadata?.role !== "admin") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
     }
 
-    // 1️⃣ Fetch order
-    const { data: order, error: fetchErr } = await getSupabase()
+    const { id } = await params
+    const body = await request.json()
+    const deliveryBoyId = String(body.delivery_boy_id || "").trim()
+
+    if (!deliveryBoyId) {
+      return NextResponse.json(
+        { error: "delivery_boy_id required" },
+        { status: 400 }
+      )
+    }
+
+    const supabase = getSupabaseAdmin()
+
+    // Verify the delivery partner exists
+    const { data: driver, error: driverError } = await supabase
+      .from("delivery_boys")
+      .select("id, name")
+      .eq("id", deliveryBoyId)
+      .single()
+
+    if (driverError || !driver) {
+      return NextResponse.json(
+        { error: "Delivery partner not found" },
+        { status: 404 }
+      )
+    }
+
+    // Fetch the order
+    const { data: order, error: orderError } = await supabase
       .from("orders")
-      .select("*")
+      .select("id, delivery_boy_id, timeline")
       .eq("id", id)
       .single()
 
-    if (fetchErr || !order) {
+    if (orderError || !order) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 })
     }
 
-    // 2️⃣ Prevent double assignment
     if (order.delivery_boy_id) {
-      return NextResponse.json({ error: "Order already assigned" }, { status: 400 })
+      return NextResponse.json(
+        { error: "Order already assigned" },
+        { status: 409 }
+      )
     }
 
-    // 3️⃣ Assign delivery + timeline (ATOMIC)
-    const { data, error } = await getSupabase()
+    const timeline = Array.isArray(order.timeline) ? order.timeline : []
+
+    // Conditional update prevents simultaneous duplicate assignments
+    const { data, error } = await supabase
       .from("orders")
       .update({
-        delivery_boy_id,
+        delivery_boy_id: driver.id,
         status: "ready",
         timeline: [
-          ...(order.timeline || []),
+          ...timeline,
           {
             status: "ready",
             action: "Delivery Assigned",
-            description: `Assigned to ${delivery_name}`,
+            description: `Assigned to ${driver.name}`,
             timestamp: new Date().toISOString(),
-            actor: "admin"
-          }
-        ]
+            actor: "admin",
+          },
+        ],
       })
       .eq("id", id)
+      .is("delivery_boy_id", null)
       .select()
-      .single()
+      .maybeSingle()
 
     if (error) {
-      console.error("ASSIGN ERROR:", error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      console.error("Order assignment failed:", error.message)
+      return NextResponse.json(
+        { error: "Unable to assign delivery partner" },
+        { status: 500 }
+      )
+    }
+
+    if (!data) {
+      return NextResponse.json(
+        { error: "Order was already assigned or changed" },
+        { status: 409 }
+      )
     }
 
     return NextResponse.json({ success: true, order: data })
-  } catch (e: any) {
-    console.error("SERVER ERROR:", e)
+  } catch (error) {
+    console.error("Order assignment error:", error)
     return NextResponse.json({ error: "Server error" }, { status: 500 })
   }
 }

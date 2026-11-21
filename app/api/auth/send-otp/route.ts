@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server"
+﻿import { NextRequest, NextResponse } from "next/server"
 import { getSupabaseServer } from "@/lib/supabase/server"
 import { logger } from "@/lib/logger"
 
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     }
 
     const normalizedEmail = email.toLowerCase().trim()
-    logger.log(`📧 OTP: Sending to ${normalizedEmail} (type: ${type})`)
+    logger.log(`ðŸ“§ OTP: Sending to ${normalizedEmail} (type: ${type})`)
 
     // Use Supabase Auth to send magic link
     const supabase = await getSupabaseServer()
@@ -33,12 +33,12 @@ export async function POST(request: NextRequest) {
       email: normalizedEmail,
       options: {
         emailRedirectTo: `${process.env.NEXT_PUBLIC_API_URL}/auth/callback`,
-        shouldCreateUser: type === "signup"
+        shouldCreateUser: true
       }
     })
 
     if (error) {
-      logger.error("❌ OTP: Supabase error", error.message)
+      logger.error("âŒ OTP: Supabase error", error.message)
       return NextResponse.json(
         { 
           error: "Failed to send OTP",
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    logger.log(`✅ OTP: Magic link sent to ${normalizedEmail}`)
+    logger.log(`âœ… OTP: Magic link sent to ${normalizedEmail}`)
 
     return NextResponse.json({
       success: true,
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       expiresIn: 3600 // 1 hour
     })
   } catch (error) {
-    logger.error("❌ OTP: Request failed", error)
+    logger.error("âŒ OTP: Request failed", error)
     return NextResponse.json(
       { error: "Failed to send OTP" },
       { status: 500 }
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Mask email for display (e.g., user@example.com → u***@example.com)
+ * Mask email for display (e.g., user@example.com â†’ u***@example.com)
  */
 function maskEmail(email: string): string {
   const [local, domain] = email.split("@")

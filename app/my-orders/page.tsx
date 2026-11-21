@@ -200,7 +200,7 @@ export default function MyOrdersPage() {
                           <div className="text-right">
                             <p className="text-xs text-slate-500 font-medium">Total</p>
                             <p className="text-lg font-bold text-emerald-600 mt-0.5">
-                              ₹{order.total_price + (order.delivery_cost || 0)}
+                              ₹{order.total_price}
                             </p>
                           </div>
                         </div>

@@ -1,79 +1,122 @@
-import { NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+
+import { NextRequest, NextResponse } from "next/server"
+import { getSupabaseAdmin } from "@/lib/supabase/server"
+import { verifyDriverSession } from "@/lib/delivery-session"
 import { commissionFromDistanceKm, haversineKm } from "@/lib/geo"
 
-export const dynamic = 'force-dynamic'
+export const dynamic = "force-dynamic"
 
-const getSupabase = () => createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
-
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const { id } = await params
-    const { otp, delivery_boy_id } = await req.json()
-    const supabase = getSupabase()
+    const driverId = verifyDriverSession(req)
 
-    if (!delivery_boy_id) {
-      return NextResponse.json({ error: "Delivery boy ID required" }, { status: 400 })
+    if (!driverId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // ✅ Get order without auth
+    const { id } = await params
+    const body = await req.json()
+    const otp = String(body.otp ?? "")
+
+    if (!/^\d{4,6}$/.test(otp)) {
+      return NextResponse.json({ error: "Enter a valid OTP" }, { status: 400 })
+    }
+
+    const supabase = getSupabaseAdmin()
+
     const { data: order, error } = await supabase
       .from("orders")
       .select("*")
       .eq("id", id)
-      .single()
-      
+      .maybeSingle()
+
     if (error || !order) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 })
     }
 
-    // ✅ Validate assignment
-    if (order.delivery_boy_id !== delivery_boy_id) {
-      return NextResponse.json({ error: "This order is not assigned to you" }, { status: 403 })
+    if (order.delivery_boy_id !== driverId) {
+      return NextResponse.json(
+        { error: "This order is not assigned to you" },
+        { status: 403 }
+      )
     }
 
-    if (order.otp !== otp) {
+    if (order.status !== "picked_up") {
+      return NextResponse.json(
+        { error: "Order must be picked up before delivery" },
+        { status: 400 }
+      )
+    }
+
+    if (String(order.otp) !== otp) {
       return NextResponse.json({ error: "Invalid OTP" }, { status: 400 })
     }
 
     const km = haversineKm(
-      { lat: order.shop_lat, lng: order.shop_lng }, 
+      { lat: order.shop_lat, lng: order.shop_lng },
       { lat: order.buyer_lat, lng: order.buyer_lng }
     )
-    const amount = commissionFromDistanceKm(km)
 
-    // Update order -> delivered
-    const { error: upErr } = await supabase
+    const amount = commissionFromDistanceKm(km)
+    const timeline = Array.isArray(order.timeline) ? order.timeline : []
+
+    const { data: updatedOrder, error: updateError } = await supabase
       .from("orders")
-      .update({ status: "delivered" })
-      .eq("id", order.id)
-      
-    if (upErr) {
-      return NextResponse.json({ error: upErr.message }, { status: 500 })
+      .update({
+        status: "delivered",
+        timeline: [
+          ...timeline,
+          {
+            action: "Delivery Completed",
+            actor: "delivery_boy",
+            status: "delivered",
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      })
+      .eq("id", id)
+      .eq("delivery_boy_id", driverId)
+      .eq("status", "picked_up")
+      .select("id")
+      .maybeSingle()
+
+    if (updateError) {
+      console.error("Order delivery update failed:", updateError.message)
+      return NextResponse.json(
+        { error: "Unable to update order" },
+        { status: 500 }
+      )
     }
 
-    // Create commission row
-    if (order.delivery_boy_id) {
-      const { error: cErr } = await supabase
-        .from("commissions")
-        .insert({
-          delivery_boy_id: order.delivery_boy_id,
-          order_id: order.id,
-          amount,
-          paid_status: "unpaid",
-        })
-        
-      if (cErr) {
-        return NextResponse.json({ error: cErr.message }, { status: 500 })
-      }
+    if (!updatedOrder) {
+      return NextResponse.json(
+        { error: "Order status changed. Please refresh and try again." },
+        { status: 409 }
+      )
+    }
+
+    const { error: commissionError } = await supabase
+      .from("commissions")
+      .insert({
+        delivery_boy_id: driverId,
+        order_id: id,
+        amount,
+        paid_status: "unpaid",
+      })
+
+    if (commissionError) {
+      console.error("Commission creation failed:", commissionError.message)
+      return NextResponse.json(
+        { error: "Order delivered, but commission creation failed" },
+        { status: 500 }
+      )
     }
 
     return NextResponse.json({ ok: true, amount })
-    
-  } catch (error: any) {
+  } catch (error) {
     console.error("OTP verification error:", error)
     return NextResponse.json({ error: "Server error" }, { status: 500 })
   }

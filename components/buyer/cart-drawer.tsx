@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { useCart } from "./cart-context";
@@ -78,7 +78,7 @@ export function CartCheckout({
           try {
             const parsed = JSON.parse(savedBuyer);
             if (parsed?.phone) {
-              logger.log("📦 Using buyer from localStorage as fallback:", parsed);
+              logger.log("ðŸ“¦ Using buyer from localStorage as fallback:", parsed);
               setDisplayBuyer(parsed);
               return;
             }
@@ -118,18 +118,34 @@ export function CartCheckout({
       if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
         throw new Error("Invalid phone number format");
       }
+   const buyerLocation = await new Promise<GeolocationPosition>(
+  (resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("Location is not supported by this browser"))
+      return
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      resolve,
+      () => reject(new Error("Please allow location access to place your order")),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    )
+  }
+)
 
       const orderData = {
         shop_id: shopId,
         buyer_phone: cleanPhone,
         buyer_address: displayBuyer.address || "",
+        buyer_lat: buyerLocation.coords.latitude,
+        buyer_lng: buyerLocation.coords.longitude,
         products: items.map((i) => ({
           product_id: i.product_id,
           name: i.name,
           price: i.price,
           quantity: i.quantity,
         })),
-        total_price: total,
+        total_price: grandTotal,
         delivery_cost: deliveryCost,
         payment_type: paymentType,
         shop_lat: shopLat,
@@ -216,7 +232,7 @@ export function CartCheckout({
     displayBuyer?.phone && /^[6-9]\d{9}$/.test(displayBuyer.phone.replace(/\D/g, ""));
 
   // Debug logging
-  logger.log("🛒 Cart drawer rendering:", {
+  logger.log("ðŸ›’ Cart drawer rendering:", {
     hasPhone: !!displayBuyer?.phone,
     phone: displayBuyer?.phone,
     isComplete: isProfileComplete,
@@ -240,9 +256,9 @@ export function CartCheckout({
                 </span>
               </div>
               <div className="text-left">
-                <p className="font-bold text-lg">₹{grandTotal}</p>
+                <p className="font-bold text-lg">â‚¹{grandTotal}</p>
                 <p className="text-xs text-white/80">
-                  {items.length} items • delivery included
+                  {items.length} items â€¢ delivery included
                 </p>
               </div>
             </div>
@@ -291,7 +307,7 @@ export function CartCheckout({
                     <div className="flex-1">
                       <p className="font-semibold text-slate-900">{i.name}</p>
                       <p className="text-sm text-emerald-600 font-bold">
-                        ₹{i.price * i.quantity}
+                        â‚¹{i.price * i.quantity}
                       </p>
                     </div>
                     <div className="flex items-center gap-3">
@@ -332,18 +348,18 @@ export function CartCheckout({
                 <div className="space-y-3 mb-6 p-4 rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100 border border-slate-200">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-600">Items Subtotal</span>
-                    <span className="text-slate-900 font-medium">₹{total}</span>
+                    <span className="text-slate-900 font-medium">â‚¹{total}</span>
                   </div>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-600 flex items-center gap-2">
                       <Truck className="h-4 w-4 text-emerald-500" /> Delivery Fee
                     </span>
-                    <span className="text-slate-900 font-medium">₹{deliveryCost}</span>
+                    <span className="text-slate-900 font-medium">â‚¹{deliveryCost}</span>
                   </div>
                   <div className="border-t border-slate-300 pt-3 flex items-center justify-between">
                     <span className="font-semibold text-slate-900">Total</span>
                     <span className="text-3xl font-extrabold text-emerald-600">
-                      ₹{grandTotal}
+                      â‚¹{grandTotal}
                     </span>
                   </div>
                 </div>
@@ -490,7 +506,7 @@ export function CartCheckout({
                     ) : !isProfileComplete ? (
                       "Complete Profile"
                     ) : (
-                      `Place Order • ₹${grandTotal}`
+                      `Place Order â€¢ â‚¹${grandTotal}`
                     )}
                   </Button>
                 </div>

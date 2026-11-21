@@ -1,33 +1,30 @@
+
 import { NextRequest, NextResponse } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { getSupabaseAdmin } from "@/lib/supabase/server"
+import { verifyDriverSession } from "@/lib/delivery-session"
 
-export const dynamic = 'force-dynamic'
-
-const getSupabase = () => createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-)
+export const dynamic = "force-dynamic"
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params
-    const body = await request.json()
-    const { delivery_boy_id } = body
+    const driverId = verifyDriverSession(request)
 
-    if (!delivery_boy_id) {
+    if (!driverId) {
       return NextResponse.json(
-        { error: "Delivery boy ID required" },
-        { status: 400 }
+        { error: "Unauthorized. Please log in again." },
+        { status: 401 }
       )
     }
 
-    // Get current order
+    const { id } = await params
+    const supabase = getSupabaseAdmin()
+
     const { data: order, error: orderError } = await supabase
       .from("orders")
-      .select("*")
+      .select("id, status, delivery_boy_id, timeline")
       .eq("id", id)
       .single()
 
@@ -38,70 +35,69 @@ export async function POST(
       )
     }
 
-    // ✅ Validate delivery boy is assigned to this order
-    if (order.delivery_boy_id !== delivery_boy_id) {
+    if (order.delivery_boy_id !== driverId) {
       return NextResponse.json(
-        { 
-          error: "Forbidden", 
-          details: "You are not assigned to deliver this order" 
-        },
+        { error: "You are not assigned to deliver this order" },
         { status: 403 }
       )
     }
 
-    // ✅ Must be in READY state
     if (order.status !== "ready") {
       return NextResponse.json(
-        { 
-          error: "Invalid order state", 
-          details: `Order must be 'ready' to pick up (current: ${order.status})` 
-        },
+        { error: `Order must be ready to pick up (current: ${order.status})` },
         { status: 400 }
       )
     }
 
-    // ✅ Atomic update
+    const timeline = Array.isArray(order.timeline) ? order.timeline : []
+
     const { data: updatedOrder, error: updateError } = await supabase
       .from("orders")
-      .update({ 
+      .update({
         status: "picked_up",
         timeline: [
-          ...(order.timeline || []),
+          ...timeline,
           {
             status: "picked_up",
             action: "Order Picked Up",
             description: "Delivery partner has picked up the order",
             timestamp: new Date().toISOString(),
             actor: "delivery",
-            actor_id: delivery_boy_id,
-            metadata: { otp_verified: false }
-          }
-        ]
+            actor_id: driverId,
+            metadata: { otp_verified: false },
+          },
+        ],
       })
       .eq("id", id)
+      .eq("delivery_boy_id", driverId)
+      .eq("status", "ready")
       .select()
-      .single()
+      .maybeSingle()
 
     if (updateError) {
+      console.error("Pickup update failed:", updateError.message)
       return NextResponse.json(
-        { error: "Failed to update order", details: updateError.message },
+        { error: "Failed to update order" },
         { status: 500 }
       )
     }
 
-    return NextResponse.json(
-      { 
-        success: true, 
-        order: updatedOrder,
-        message: "Order marked as picked up successfully" 
-      },
-      { status: 200 }
-    )
+    if (!updatedOrder) {
+      return NextResponse.json(
+        { error: "Order state changed. Refresh and try again." },
+        { status: 409 }
+      )
+    }
 
-  } catch (error: any) {
+    return NextResponse.json({
+      success: true,
+      order: updatedOrder,
+      message: "Order marked as picked up successfully",
+    })
+  } catch (error) {
     console.error("Pickup error:", error)
     return NextResponse.json(
-      { error: "Server error", details: error.message },
+      { error: "Server error" },
       { status: 500 }
     )
   }

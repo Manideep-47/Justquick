@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import { useParams, notFound } from "next/navigation"
@@ -100,7 +100,7 @@ export default function OrderTrackingPage() {
           <h2 className="text-xl font-semibold text-slate-900 mb-2">Order not found</h2>
           <p className="text-slate-500 mb-4">The order you're looking for doesn't exist</p>
           <Button asChild>
-            <Link href="/myorders">View My Orders</Link>
+            <Link href="/my-orders">View My Orders</Link>
           </Button>
         </div>
       </main>
@@ -115,7 +115,7 @@ export default function OrderTrackingPage() {
       <div className="mx-auto max-w-2xl">
         {/* Header */}
         <Button asChild variant="ghost" className="mb-6 gap-2 text-slate-600 hover:text-slate-900 hover:bg-slate-200/50">
-          <Link href="/myorders">
+          <Link href="/my-orders">
             <ArrowLeft className="h-4 w-4" />
             Back to My Orders
           </Link>
@@ -178,9 +178,9 @@ export default function OrderTrackingPage() {
               <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200">
                 <div className="flex-1">
                   <p className="font-medium text-slate-900">{p.name}</p>
-                  <p className="text-sm text-slate-500">₹{p.price} × {p.quantity}</p>
+                  <p className="text-sm text-slate-500">&#8377;{p.price} &times; {p.quantity}</p>
                 </div>
-                <p className="font-bold text-slate-900">₹{Number(p.price) * Number(p.quantity)}</p>
+                <p className="font-bold text-slate-900">&#8377;{Number(p.price) * Number(p.quantity)}</p>
               </div>
             ))}
           </div>
@@ -192,13 +192,13 @@ export default function OrderTrackingPage() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-slate-600">Items Total</span>
-              <span className="font-medium text-slate-900">₹{order.total_price - (order.delivery_cost || 0)}</span>
+              <span className="font-medium text-slate-900">&#8377;{(order.products || []).reduce((sum: number, p: any) => sum + Number(p.price) * Number(p.quantity), 0)}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-slate-600 flex items-center gap-2">
                 <Truck className="h-4 w-4" /> Delivery Fee
               </span>
-              <span className="font-medium text-slate-900">₹{order.delivery_cost || 0}</span>
+              <span className="font-medium text-slate-900">&#8377;{order.delivery_cost || 0}</span>
             </div>
             <div className="border-t border-slate-200 pt-3 flex items-center justify-between">
               <span className="font-bold text-slate-900">Grand Total</span>
@@ -250,8 +250,8 @@ export default function OrderTrackingPage() {
         }`}>
           <p className="text-sm text-slate-600 text-center mb-3">
             {order.status === "delivered"
-              ? "✅ Delivery Completed - OTP Verified"
-              : "🔐 Delivery OTP"}
+              ? "Delivery Completed - OTP Verified"
+              : "Delivery OTP"}
           </p>
           <div className="flex items-center justify-between gap-4">
             <p className="text-5xl font-mono font-bold text-emerald-600 flex-1 text-center">{order.otp}</p>
@@ -281,7 +281,7 @@ export default function OrderTrackingPage() {
             <div className="flex-1">
               <p className="text-xs text-slate-500 font-medium mb-1">Payment Status</p>
               <Badge variant={order.payment_status === "paid" ? "default" : "secondary"} className="text-sm px-3 py-1">
-                {order.payment_status === "paid" ? "✓ Paid" : "Pending"}
+                {order.payment_status === "paid" ? "ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ Paid" : "Pending"}
               </Badge>
             </div>
           </div>
@@ -290,7 +290,7 @@ export default function OrderTrackingPage() {
         {/* Real-time Update Info */}
         <div className="text-center p-4 bg-blue-50 border border-blue-200 rounded-2xl">
           <p className="text-sm text-blue-700 font-medium">
-            ⚡ This page updates in real-time. No need to refresh!
+            ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¦ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ This page updates in real-time. No need to refresh!
           </p>
         </div>
       </div>

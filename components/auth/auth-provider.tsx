@@ -57,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // HYDRATION FIX: Initial state is undefined (not null)
   // This prevents "flash" where cart/UI briefly disappears on page load
   // Null means "checked and found nothing", undefined means "not checked yet"
-  const [user, setUser] = useState<User | undefined>(undefined)
+  const [user, setUser] = useState<User | null | undefined>(undefined)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
@@ -93,7 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       // Check if error is "no rows found" (PGRST116) or permission denied (403)
-      if (error?.code === 'PGRST116' || error?.status === 406) {
+      if (error?.code === 'PGRST116') {
         // Profile doesn't exist - we need to create it
         logger.log("📝 No profile found - creating new profile for user:", userId)
         
@@ -184,7 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Some other Supabase error occurred
         logger.error("❌ Error fetching profile:", error.message)
         logger.error("Error code:", error.code)
-        logger.error("Error status:", error.status)
+        logger.error("Error code:", error.code)
         // Do NOT continue - this is an unexpected error
         throw error
       }

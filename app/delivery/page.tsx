@@ -1,14 +1,13 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useSearchParams, useRouter } from "next/navigation"
+import { useRouter } from "next/navigation"
 import useSWR, { mutate } from "swr"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
-import { supabase } from "@/lib/supabase/client"
 import { googleDirectionsURL, haversineKm } from "@/lib/geo"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -27,17 +26,22 @@ import {
   IndianRupee,
 } from "lucide-react"
 
-const fetcher = (u: string) => fetch(u).then((r) => r.json())
+const fetcher = async (u: string) => {
+  const response = await fetch(u)
+  const data = await response.json()
+  if (!response.ok) {
+    const error = new Error(data?.error || "Request failed") as Error & { status: number }
+    error.status = response.status
+    throw error
+  }
+  return data
+}
 const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/
 
 export default function DeliveryDashboard() {
-  const searchParams = useSearchParams()
   const router = useRouter()
-  const driverIdFromUrl = searchParams.get("driver") || ""
-  const [deliveryBoyId, setDeliveryBoyId] = useState(driverIdFromUrl)
   const [isAvailable, setIsAvailable] = useState(false)
   const [newOrderAlert, setNewOrderAlert] = useState<string | null>(null)
-
   const [otpModal, setOtpModal] = useState<{
     open: boolean
     orderId: string
@@ -49,61 +53,32 @@ export default function DeliveryDashboard() {
   const [otpError, setOtpError] = useState("")
   const [verifying, setVerifying] = useState(false)
 
-  useEffect(() => {
-    const stored = localStorage.getItem("jq_driver")
-    if (stored) {
-      try {
-        const { driverId } = JSON.parse(stored)
-        if (driverId && !driverIdFromUrl) {
-          setDeliveryBoyId(driverId)
-        }
-      } catch {
-        // Invalid data
-      }
-    }
+  // Driver identity comes only from the signed HTTP-only session cookie.
+  const {
+    data: driverData,
+    error: driverError,
+  } = useSWR("/api/delivery/me", fetcher)
 
-    if (driverIdFromUrl) {
-      setDeliveryBoyId(driverIdFromUrl)
-    }
-  }, [driverIdFromUrl])
-
-  const trimmed = deliveryBoyId.trim()
+  const trimmed = driverData?.driver?.id || ""
   const isValidUuid = UUID_RE.test(trimmed)
 
-  const { data: driverData } = useSWR(isValidUuid ? `/api/delivery-boys/${trimmed}` : null, fetcher)
-
   useEffect(() => {
-    if (driverData?.delivery_boy) {
-      setIsAvailable(driverData.delivery_boy.is_available || false)
+    if (driverData?.driver) {
+      setIsAvailable(Boolean(driverData.driver.is_available))
     }
   }, [driverData])
 
   useEffect(() => {
-    if (!isValidUuid) return
-    const channel = supabase
-      .channel("orders-delivery")
-      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, (payload: any) => {
-        mutate("/api/delivery/orders")
-        if (payload.eventType === "UPDATE" && payload.new.delivery_boy_id === trimmed && !payload.old.delivery_boy_id) {
-          setNewOrderAlert(`New delivery assigned! Order #${payload.new.id.slice(0, 8)}`)
-          setTimeout(() => setNewOrderAlert(null), 5000)
-        }
-      })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" }, (payload: any) => {
-        if (payload.new.target_type === "delivery" && (payload.new.target_id === trimmed || !payload.new.target_id)) {
-          setNewOrderAlert(payload.new.message)
-          setTimeout(() => setNewOrderAlert(null), 5000)
-        }
-      })
-      .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
+    if (driverError?.status === 401 || driverError?.status === 404) {
+      router.replace("/partner/driver")
     }
-  }, [isValidUuid, trimmed])
+  }, [driverError, router])
 
+  // Poll securely instead of subscribing to every order and notification.
   const { data } = useSWR(
-    isValidUuid ? `/api/delivery/orders?delivery_boy_id=${trimmed}` : null,
-    fetcher
+    isValidUuid ? "/api/delivery/orders" : null,
+    fetcher,
+    { refreshInterval: 5000 }
   )
   const orders = data?.orders || []
 
@@ -125,15 +100,13 @@ export default function DeliveryDashboard() {
   async function markPickedUp(id: string) {
     const res = await fetch(`/api/orders/${id}/pickup`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ delivery_boy_id: trimmed }),
     })
     if (!res.ok) {
       const error = await res.json()
       alert(error.details || "Failed to mark order as picked up")
       return
     }
-    mutate(`/api/delivery/orders?delivery_boy_id=${trimmed}`)
+    mutate("/api/delivery/orders")
   }
 
   async function verifyOTP(id: string) {
@@ -147,10 +120,7 @@ export default function DeliveryDashboard() {
     const res = await fetch(`/api/orders/${id}/otp`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        otp: otpInput,
-        delivery_boy_id: trimmed 
-      }),
+      body: JSON.stringify({ otp: otpInput }),
     })
     const data = await res.json()
     setVerifying(false)
@@ -162,7 +132,7 @@ export default function DeliveryDashboard() {
 
     setOtpModal(null)
     setOtpInput("")
-    mutate(`/api/delivery/orders?delivery_boy_id=${trimmed}`)
+    mutate("/api/delivery/orders")
   }
 
   const openOtpModal = (order: any) => {
@@ -177,15 +147,22 @@ export default function DeliveryDashboard() {
     setOtpError("")
   }
 
-  const handleLogout = () => {
-    localStorage.removeItem("jq_driver")
-    router.push("/partner/driver")
+  const handleLogout = async () => {
+    await fetch("/api/delivery/logout", { method: "POST" })
+    router.replace("/partner/driver")
   }
 
-  if (!isValidUuid) {
-    router.push("/partner/driver")
-    return null
-  }
+ if (!driverData && !driverError) {
+  return (
+    <main className="flex min-h-screen items-center justify-center">
+      <p className="text-lg">Loading driver dashboard...</p>
+    </main>
+  )
+}
+
+if (!isValidUuid) {
+  return null
+}
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
@@ -329,7 +306,7 @@ export default function DeliveryDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Total Commission</p>
-                <p className="text-3xl font-bold text-primary">₹{driverData?.delivery_boy?.total_commission || 0}</p>
+                <p className="text-3xl font-bold text-primary">₹{driverData?.driver?.total_commission || 0}</p>
               </div>
               <div className="h-14 w-14 rounded-full bg-primary/20 flex items-center justify-center">
                 <Wallet className="h-7 w-7 text-primary" />
